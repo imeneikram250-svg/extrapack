@@ -1,0 +1,29 @@
+rules_version = '2';
+// ==========================================
+// EXTRA PACK - Règles de sécurité Firestore
+// ==========================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── COMMANDES ────────────────────────────────────────
+    // Les commandes sont créées via les API Routes (serveur)
+    // Aucun accès direct depuis le client
+    match /orders/{orderId} {
+      // Lecture publique désactivée — tout passe par /api/orders
+      allow read: if false;
+      // Écriture publique désactivée — tout passe par /api/orders
+      allow write: if false;
+    }
+
+    // ── PRODUITS (cache optionnel) ────────────────────────
+    match /products/{productId} {
+      allow read: if true;   // Lecture publique OK
+      allow write: if false; // Écriture via API uniquement
+    }
+
+    // ── RÈGLE PAR DÉFAUT ─────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
