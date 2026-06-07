@@ -32,6 +32,9 @@ const cormorant = Cormorant_Garamond({
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://www.extrapack.dz"),
+  icons: {
+  icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌸</text></svg>",
+  },
   title: {
     default: "Extra Pack | Beauté & Élégance — Livraison partout en Algérie",
     template: "%s | Extra Pack",
