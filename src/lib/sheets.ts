@@ -1,20 +1,18 @@
 // ==========================================
-// EXTRA PACK - Google Sheets API Service
+// EXTRA PACK - Google Sheets (Variantes + Livraison Wilaya)
 // ==========================================
 import { google } from "googleapis";
-import { Product, DeliveryZone, Order } from "@/types";
-import { v4 as uuidv4 } from "uuid";
+import { Product, ProductVariant, WilayaDelivery, Order } from "@/types";
 import { format } from "date-fns";
 
 const getAuth = () => {
-  const auth = new google.auth.GoogleAuth({
+  return new google.auth.GoogleAuth({
     credentials: {
       client_email: process.env.GOOGLE_SHEETS_CLIENT_EMAIL,
       private_key: process.env.GOOGLE_SHEETS_PRIVATE_KEY?.replace(/\\n/g, "\n"),
     },
     scopes: ["https://www.googleapis.com/auth/spreadsheets"],
   });
-  return auth;
 };
 
 const getSheets = async () => {
@@ -22,63 +20,115 @@ const getSheets = async () => {
   return google.sheets({ version: "v4", auth });
 };
 
+// ── PARSER VARIANTES ─────────────────────────────────────
+// Format colonne J: "Noir Corbeau:#0a0a0a:10|Châtain Foncé:#3b1f0a:5"
+// Format colonne G: "img1.jpg,img2.jpg|img3.jpg,img4.jpg" (par variante)
+function parseVariants(
+  variantsStr: string,
+  photosStr: string
+): ProductVariant[] | undefined {
+  if (!variantsStr || variantsStr.trim() === "") return undefined;
+
+  const variantGroups = variantsStr.split("|");
+  const photoGroups = photosStr ? photosStr.split("|") : [];
+
+  return variantGroups
+    .map((v, i) => {
+      const parts = v.trim().split(":");
+      if (parts.length < 2) return null;
+
+      const name = parts[0].trim();
+      const color = parts[1].trim();
+      const stock = parseInt(parts[2] || "0");
+      const images = photoGroups[i]
+        ? photoGroups[i].split(",").map((u) => u.trim()).filter(Boolean)
+        : [];
+
+      return { name, color, stock, images };
+    })
+    .filter(Boolean) as ProductVariant[];
+}
+
 // ── PRODUITS ──────────────────────────────────────────────
 export async function fetchProductsFromSheet(): Promise<Product[]> {
   try {
     const sheets = await getSheets();
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.PRODUCTS_SHEET_ID,
-      range: "Produits!A2:I1000", // Skip header row
+      range: "Produits!A2:K1000",
     });
 
     const rows = response.data.values || [];
 
     return rows
-      .filter((row) => row[7] === "Actif") // Statut = Actif
-      .map((row): Product => ({
-        id: row[0] || uuidv4(),
-        name: row[1] || "",
-        category: row[2] || "Général",
-        description: row[3] || "",
-        price: parseFloat(row[4]) || 0,
-        stock: parseInt(row[5]) || 0,
-        images: row[6]
-          ? row[6].split(",").map((url: string) => url.trim()).filter(Boolean)
-          : [],
-        status: (row[7] as "Actif" | "Inactif") || "Actif",
-        promotion: row[8] ? parseFloat(row[8]) : undefined,
-        originalPrice: row[8] && parseFloat(row[8]) > 0
-          ? parseFloat(row[4])
-          : undefined,
-        sold: 0,
-      }))
+      .filter((row) => row[7] === "Actif" && row[1])
+      .map((row): Product => {
+        const photosStr = row[6] || "";
+        const variantsStr = row[9] || ""; // colonne J
+
+        // Si variantes: photos groupées par variante
+        // Si pas variantes: photos normales séparées par virgule
+        const hasVariants = variantsStr.trim() !== "";
+        const variants = hasVariants
+          ? parseVariants(variantsStr, photosStr)
+          : undefined;
+
+        // Photos principales = première photo de chaque variante OU photos normales
+        const mainImages = hasVariants
+          ? (variants?.map((v) => v.images[0]).filter(Boolean) as string[]) || []
+          : photosStr.split(",").map((u: string) => u.trim()).filter(Boolean);
+
+        // Stock total = somme des stocks variantes OU stock direct
+        const totalStock = variants
+          ? variants.reduce((sum, v) => sum + v.stock, 0)
+          : parseInt(row[5]) || 0;
+
+        return {
+          id: row[0] || `prod-${Date.now()}`,
+          name: row[1] || "",
+          category: row[2] || "Général",
+          description: row[3] || "",
+          price: parseFloat(row[4]) || 0,
+          stock: totalStock,
+          images: mainImages,
+          status: (row[7] as "Actif" | "Inactif") || "Actif",
+          promotion: row[8] ? parseFloat(row[8]) : undefined,
+          originalPrice: row[8] && parseFloat(row[8]) > 0
+            ? parseFloat(row[4])
+            : undefined,
+          variants,
+          sold: 0,
+        };
+      })
       .filter((p) => p.name && p.price > 0);
   } catch (error) {
-    console.error("Erreur lecture produits Google Sheets:", error);
+    console.error("Erreur lecture produits:", error);
     return [];
   }
 }
 
-// ── ZONES DE LIVRAISON ────────────────────────────────────
-export async function fetchDeliveryZonesFromSheet(): Promise<DeliveryZone[]> {
+// ── LIVRAISON PAR WILAYA ──────────────────────────────────
+// Format Sheet: Wilaya | Domicile (DA) | Bureau (DA)
+export async function fetchDeliveryFromSheet(): Promise<WilayaDelivery[]> {
   try {
     const sheets = await getSheets();
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.DELIVERY_SHEET_ID,
-      range: "Livraison!A2:C5000",
+      range: "Livraison!A2:C100",
     });
 
     const rows = response.data.values || [];
 
     return rows
-      .filter((row) => row[0] && row[1] && row[2])
-      .map((row): DeliveryZone => ({
+      .filter((row) => row[0] && row[1])
+      .map((row): WilayaDelivery => ({
         wilaya: row[0].trim(),
-        commune: row[1].trim(),
-        fee: parseFloat(row[2]) || 0,
-      }));
+        domicile: parseFloat(row[1]) || 0,
+        bureau: parseFloat(row[2]) || 0,
+      }))
+      .sort((a, b) => a.wilaya.localeCompare(b.wilaya, "fr"));
   } catch (error) {
-    console.error("Erreur lecture livraison Google Sheets:", error);
+    console.error("Erreur lecture livraison:", error);
     return [];
   }
 }
@@ -89,8 +139,23 @@ export async function saveOrderToSheet(order: Order): Promise<boolean> {
     const sheets = await getSheets();
 
     const itemsSummary = order.items
-      .map((i) => `${i.productName} x${i.quantity}`)
+      .map((i) => `${i.productName}${i.variant ? ` (${i.variant})` : ""} x${i.quantity}`)
       .join(" | ");
+
+    const variantsSummary = order.items
+      .filter((i) => i.variant)
+      .map((i) => i.variant)
+      .join(", ") || "-";
+
+    const deliveryTypeLabel =
+      order.customer.deliveryType === "domicile"
+        ? "🏠 Domicile"
+        : "🏢 Stop Desk";
+
+    const addressInfo =
+      order.customer.deliveryType === "domicile"
+        ? order.customer.address || "-"
+        : order.customer.agenceZR || "-";
 
     const row = [
       format(new Date(order.date), "dd/MM/yyyy HH:mm"),
@@ -104,87 +169,22 @@ export async function saveOrderToSheet(order: Order): Promise<boolean> {
       order.customer.firstName,
       order.customer.phone,
       order.customer.wilaya,
-      order.customer.commune,
+      deliveryTypeLabel,
+      addressInfo,
+      variantsSummary,
       order.status,
     ];
 
     await sheets.spreadsheets.values.append({
       spreadsheetId: process.env.ORDERS_SHEET_ID,
-      range: "Commandes!A:M",
+      range: "Commandes!A:O",
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [row] },
     });
 
     return true;
   } catch (error) {
-    console.error("Erreur enregistrement commande Google Sheets:", error);
-    return false;
-  }
-}
-
-// ── MISE À JOUR STOCK ─────────────────────────────────────
-export async function updateProductStockInSheet(
-  productId: string,
-  newStock: number
-): Promise<boolean> {
-  try {
-    const sheets = await getSheets();
-
-    // Find the row with this product ID
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.PRODUCTS_SHEET_ID,
-      range: "Produits!A:A",
-    });
-
-    const rows = response.data.values || [];
-    const rowIndex = rows.findIndex((row) => row[0] === productId);
-
-    if (rowIndex === -1) return false;
-
-    const rowNumber = rowIndex + 1; // 1-indexed, +1 for header
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: process.env.PRODUCTS_SHEET_ID,
-      range: `Produits!F${rowNumber}`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: [[newStock]] },
-    });
-
-    return true;
-  } catch (error) {
-    console.error("Erreur mise à jour stock:", error);
-    return false;
-  }
-}
-
-// ── MISE À JOUR STATUT COMMANDE SHEET ─────────────────────
-export async function updateOrderStatusInSheet(
-  orderNumber: string,
-  newStatus: string
-): Promise<boolean> {
-  try {
-    const sheets = await getSheets();
-
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.ORDERS_SHEET_ID,
-      range: "Commandes!B:B",
-    });
-
-    const rows = response.data.values || [];
-    const rowIndex = rows.findIndex((row) => row[0] === orderNumber);
-
-    if (rowIndex === -1) return false;
-
-    const rowNumber = rowIndex + 1;
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: process.env.ORDERS_SHEET_ID,
-      range: `Commandes!M${rowNumber}`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: [[newStatus]] },
-    });
-
-    return true;
-  } catch (error) {
-    console.error("Erreur mise à jour statut commande:", error);
+    console.error("Erreur enregistrement commande:", error);
     return false;
   }
 }

@@ -1,62 +1,67 @@
 "use client";
 // ==========================================
-// EXTRA PACK - Formulaire de Commande (Modal)
+// EXTRA PACK - Formulaire Commande (Variantes + Livraison domicile/bureau)
 // ==========================================
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { FiX, FiUser, FiPhone, FiMapPin, FiLoader, FiCheckCircle } from "react-icons/fi";
-import { Product, Wilaya, OrderFormData } from "@/types";
+import {
+  FiX, FiUser, FiPhone, FiMapPin, FiLoader,
+  FiCheckCircle, FiHome, FiPackage
+} from "react-icons/fi";
+import { Product, WilayaDelivery, OrderFormData, DeliveryType, ProductVariant } from "@/types";
 import { formatPrice, getDiscountedPrice, generateOrderNumber } from "@/lib/utils";
 import { useAppStore, useCartStore } from "@/lib/store";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Image from "next/image";
 
+interface OrderItem {
+  product: Product;
+  quantity: number;
+  selectedVariant?: ProductVariant;
+}
+
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  product?: Product;
-  quantity?: number;
+  items: OrderItem[];
 }
 
-export function OrderModal({ isOpen, onClose, product, quantity = 1 }: Props) {
+export function OrderModal({ isOpen, onClose, items }: Props) {
   const router = useRouter();
   const { setLastOrder } = useAppStore();
-  const { items: cartItems, clearCart } = useCartStore();
+  const { clearCart } = useCartStore();
 
-  // If no specific product, use cart items
-  const orderItems = product
-    ? [{ product, quantity }]
-    : cartItems;
-
-  const [wilayas, setWilayas] = useState<Wilaya[]>([]);
+  const [wilayas, setWilayas] = useState<WilayaDelivery[]>([]);
   const [loadingZones, setLoadingZones] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [step, setStep] = useState<"form" | "confirm" | "success">("form");
+  const [step, setStep] = useState<"form" | "success">("form");
 
   const [form, setForm] = useState<OrderFormData>({
     firstName: "",
     lastName: "",
     phone: "",
     wilaya: "",
-    commune: "",
+    deliveryType: "domicile",
+    address: "",
+    agenceZR: "",
     notes: "",
   });
 
-  const [deliveryFee, setDeliveryFee] = useState(0);
+  const selectedWilaya = wilayas.find((w) => w.wilaya === form.wilaya);
+  const deliveryFee = selectedWilaya
+    ? form.deliveryType === "domicile"
+      ? selectedWilaya.domicile
+      : selectedWilaya.bureau
+    : 0;
 
-  const selectedWilaya = wilayas.find((w) => w.name === form.wilaya);
-  const communes = selectedWilaya?.communes || [];
-  const selectedCommune = communes.find((c) => c.name === form.commune);
-
-  const productTotal = orderItems.reduce((sum, item) => {
+  const productTotal = (items || []).reduce((sum, item) => {
     const price = getDiscountedPrice(item.product.price, item.product.promotion);
     return sum + price * item.quantity;
   }, 0);
 
   const total = productTotal + deliveryFee;
 
-  // Load delivery zones
   useEffect(() => {
     if (isOpen && wilayas.length === 0) {
       setLoadingZones(true);
@@ -70,21 +75,9 @@ export function OrderModal({ isOpen, onClose, product, quantity = 1 }: Props) {
     }
   }, [isOpen]);
 
-  // Update delivery fee when commune changes
-  useEffect(() => {
-    if (selectedCommune) {
-      setDeliveryFee(selectedCommune.deliveryFee);
-    } else {
-      setDeliveryFee(0);
-    }
-  }, [selectedCommune]);
-
-  // Reset when wilaya changes
-  useEffect(() => {
-    setForm((f) => ({ ...f, commune: "" }));
-  }, [form.wilaya]);
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
+  ) => {
     setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
   };
 
@@ -93,20 +86,21 @@ export function OrderModal({ isOpen, onClose, product, quantity = 1 }: Props) {
     form.lastName &&
     form.phone.length >= 9 &&
     form.wilaya &&
-    form.commune;
+    (form.deliveryType === "domicile" ? form.address : true);
 
   const handleSubmit = async () => {
     if (!isFormValid) return;
     setSubmitting(true);
 
     try {
-      const items = orderItems.map((item) => ({
+      const orderItems = (items || []).map((item) => ({
         productId: item.product.id,
         productName: item.product.name,
         quantity: item.quantity,
         unitPrice: getDiscountedPrice(item.product.price, item.product.promotion),
         totalPrice: getDiscountedPrice(item.product.price, item.product.promotion) * item.quantity,
-        image: item.product.images?.[0],
+        image: item.selectedVariant?.images?.[0] || item.product.images?.[0],
+        variant: item.selectedVariant?.name,
       }));
 
       const res = await fetch("/api/orders", {
@@ -118,9 +112,11 @@ export function OrderModal({ isOpen, onClose, product, quantity = 1 }: Props) {
             lastName: form.lastName,
             phone: form.phone,
             wilaya: form.wilaya,
-            commune: form.commune,
+            deliveryType: form.deliveryType,
+            address: form.deliveryType === "domicile" ? form.address : undefined,
+            agenceZR: form.deliveryType === "bureau" ? form.agenceZR : undefined,
           },
-          items,
+          items: orderItems,
           productPrice: productTotal,
           deliveryFee,
           total,
@@ -140,16 +136,18 @@ export function OrderModal({ isOpen, onClose, product, quantity = 1 }: Props) {
             lastName: form.lastName,
             phone: form.phone,
             wilaya: form.wilaya,
-            commune: form.commune,
+            deliveryType: form.deliveryType,
+            address: form.address,
+            agenceZR: form.agenceZR,
           },
-          items,
+          items: orderItems,
           productPrice: productTotal,
           deliveryFee,
           total,
           status: "NOUVELLE COMMANDE",
         });
 
-        if (!product) clearCart(); // Clear cart if ordering from cart
+        clearCart();
         setStep("success");
         setTimeout(() => {
           onClose();
@@ -158,8 +156,8 @@ export function OrderModal({ isOpen, onClose, product, quantity = 1 }: Props) {
       } else {
         toast.error("Erreur lors de la commande. Réessayez.");
       }
-    } catch (error) {
-      toast.error("Erreur de connexion. Vérifiez votre internet.");
+    } catch {
+      toast.error("Erreur de connexion.");
     } finally {
       setSubmitting(false);
     }
@@ -170,7 +168,6 @@ export function OrderModal({ isOpen, onClose, product, quantity = 1 }: Props) {
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center px-0 sm:px-4">
-        {/* Backdrop */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -179,17 +176,15 @@ export function OrderModal({ isOpen, onClose, product, quantity = 1 }: Props) {
           onClick={onClose}
         />
 
-        {/* Modal */}
         <motion.div
-          initial={{ opacity: 0, y: 80, scale: 0.96 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 80, scale: 0.96 }}
+          initial={{ opacity: 0, y: 80 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 80 }}
           transition={{ type: "spring", damping: 30 }}
           className="relative w-full sm:max-w-lg bg-[var(--bg-primary)] rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[92vh] overflow-y-auto"
           onClick={(e) => e.stopPropagation()}
         >
           {step === "success" ? (
-            // Success state
             <div className="flex flex-col items-center justify-center p-10 text-center">
               <motion.div
                 initial={{ scale: 0 }}
@@ -200,40 +195,36 @@ export function OrderModal({ isOpen, onClose, product, quantity = 1 }: Props) {
                 <FiCheckCircle size={40} className="text-green-500" />
               </motion.div>
               <h3 className="font-display text-2xl font-bold mb-2 text-[var(--text-primary)]">
-                Commande envoyée !
+                Commande envoyée ! 🎉
               </h3>
               <p className="text-[var(--text-secondary)] text-sm">
-                Nous vous contacterons très prochainement pour confirmer votre livraison.
+                Nous vous contacterons très prochainement.
               </p>
             </div>
           ) : (
             <>
               {/* Header */}
               <div className="sticky top-0 flex items-center justify-between px-5 py-4 border-b border-[var(--border)] bg-[var(--bg-primary)] rounded-t-3xl z-10">
-                <h2 className="font-display font-bold text-xl text-[var(--text-primary)]">
-                  🛍️ Passer la commande
-                </h2>
-                <button
-                  onClick={onClose}
-                  className="p-2 rounded-xl hover:bg-[var(--bg-secondary)] transition-colors"
-                >
+                <h2 className="font-display font-bold text-xl">🛍️ Passer la commande</h2>
+                <button onClick={onClose} className="p-2 rounded-xl hover:bg-[var(--bg-secondary)]">
                   <FiX size={20} />
                 </button>
               </div>
 
               <div className="p-5 space-y-5">
-                {/* Order Summary */}
+                {/* Récapitulatif produits */}
                 <div className="bg-[var(--bg-secondary)] rounded-2xl p-4 space-y-3">
-                  <p className="font-semibold text-sm text-[var(--text-secondary)] uppercase tracking-wide">
+                  <p className="font-semibold text-xs text-[var(--text-secondary)] uppercase tracking-wide">
                     Récapitulatif
                   </p>
-                  {orderItems.map((item) => {
+                  {(items || []).map((item, i) => {
                     const price = getDiscountedPrice(item.product.price, item.product.promotion);
+                    const img = item.selectedVariant?.images?.[0] || item.product.images?.[0];
                     return (
-                      <div key={item.product.id} className="flex items-center gap-3">
+                      <div key={i} className="flex items-center gap-3">
                         <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-white flex-shrink-0">
-                          {item.product.images?.[0] ? (
-                            <Image src={item.product.images[0]} alt={item.product.name} fill className="object-cover" />
+                          {img ? (
+                            <Image src={img} alt={item.product.name} fill className="object-cover" />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center">🛍️</div>
                           )}
@@ -242,11 +233,20 @@ export function OrderModal({ isOpen, onClose, product, quantity = 1 }: Props) {
                           <p className="text-sm font-medium truncate text-[var(--text-primary)]">
                             {item.product.name}
                           </p>
-                          <p className="text-xs text-[var(--text-secondary)]">
-                            Qté: {item.quantity}
-                          </p>
+                          {item.selectedVariant && (
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <div
+                                className="w-3 h-3 rounded-full border border-gray-200"
+                                style={{ backgroundColor: item.selectedVariant.color }}
+                              />
+                              <span className="text-xs text-[var(--text-secondary)]">
+                                {item.selectedVariant.name}
+                              </span>
+                            </div>
+                          )}
+                          <p className="text-xs text-[var(--text-secondary)]">Qté: {item.quantity}</p>
                         </div>
-                        <p className="text-sm font-bold text-brand-500 flex-shrink-0">
+                        <p className="text-sm font-bold text-brand-500">
                           {formatPrice(price * item.quantity)}
                         </p>
                       </div>
@@ -254,101 +254,118 @@ export function OrderModal({ isOpen, onClose, product, quantity = 1 }: Props) {
                   })}
                 </div>
 
-                {/* Customer Form */}
+                {/* Infos client */}
                 <div className="space-y-3">
                   <p className="font-semibold text-sm flex items-center gap-2 text-[var(--text-primary)]">
-                    <FiUser size={16} className="text-brand-500" />
-                    Vos informations
+                    <FiUser size={16} className="text-brand-500" /> Vos informations
                   </p>
-
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs text-[var(--text-secondary)] mb-1 block">Nom *</label>
-                      <input
-                        name="lastName"
-                        value={form.lastName}
-                        onChange={handleChange}
-                        placeholder="Benali"
-                        className="input-field text-sm"
-                      />
+                      <input name="lastName" value={form.lastName} onChange={handleChange}
+                        placeholder="Benali" className="input-field text-sm" />
                     </div>
                     <div>
                       <label className="text-xs text-[var(--text-secondary)] mb-1 block">Prénom *</label>
-                      <input
-                        name="firstName"
-                        value={form.firstName}
-                        onChange={handleChange}
-                        placeholder="Amira"
-                        className="input-field text-sm"
-                      />
+                      <input name="firstName" value={form.firstName} onChange={handleChange}
+                        placeholder="Amira" className="input-field text-sm" />
                     </div>
                   </div>
-
                   <div>
                     <label className="text-xs text-[var(--text-secondary)] mb-1 flex items-center gap-1">
                       <FiPhone size={12} /> Téléphone *
                     </label>
-                    <input
-                      name="phone"
-                      value={form.phone}
-                      onChange={handleChange}
-                      placeholder="0550 000 000"
-                      type="tel"
-                      className="input-field text-sm"
-                    />
+                    <input name="phone" value={form.phone} onChange={handleChange}
+                      placeholder="0550 000 000" type="tel" className="input-field text-sm" />
                   </div>
                 </div>
 
-                {/* Delivery Form */}
+                {/* Livraison */}
                 <div className="space-y-3">
                   <p className="font-semibold text-sm flex items-center gap-2 text-[var(--text-primary)]">
-                    <FiMapPin size={16} className="text-brand-500" />
-                    Adresse de livraison
+                    <FiMapPin size={16} className="text-brand-500" /> Livraison
                   </p>
 
+                  {/* Wilaya */}
                   {loadingZones ? (
-                    <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)] py-3">
-                      <FiLoader size={16} className="animate-spin" />
-                      Chargement des wilayas...
+                    <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)] py-2">
+                      <FiLoader size={16} className="animate-spin" /> Chargement...
                     </div>
                   ) : (
-                    <>
-                      <div>
-                        <label className="text-xs text-[var(--text-secondary)] mb-1 block">Wilaya *</label>
-                        <select
-                          name="wilaya"
-                          value={form.wilaya}
-                          onChange={handleChange}
-                          className="input-field text-sm"
-                        >
-                          <option value="">Sélectionner une wilaya</option>
-                          {wilayas.map((w) => (
-                            <option key={w.id} value={w.name}>{w.name}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="text-xs text-[var(--text-secondary)] mb-1 block">Commune *</label>
-                        <select
-                          name="commune"
-                          value={form.commune}
-                          onChange={handleChange}
-                          disabled={!form.wilaya}
-                          className="input-field text-sm disabled:opacity-50"
-                        >
-                          <option value="">
-                            {form.wilaya ? "Sélectionner une commune" : "Choisissez d'abord une wilaya"}
+                    <div>
+                      <label className="text-xs text-[var(--text-secondary)] mb-1 block">Wilaya *</label>
+                      <select name="wilaya" value={form.wilaya} onChange={handleChange}
+                        className="input-field text-sm">
+                        <option value="">Sélectionner une wilaya</option>
+                        {wilayas.map((w) => (
+                          <option key={w.wilaya} value={w.wilaya}>
+                            {w.wilaya} — Domicile: {formatPrice(w.domicile)} | Bureau: {formatPrice(w.bureau)}
                           </option>
-                          {communes.map((c) => (
-                            <option key={c.name} value={c.name}>
-                              {c.name} — {formatPrice(c.deliveryFee)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </>
+                        ))}
+                      </select>
+                    </div>
                   )}
+
+                  {/* Type de livraison */}
+                  {form.wilaya && selectedWilaya && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        onClick={() => setForm((f) => ({ ...f, deliveryType: "domicile" }))}
+                        className={`p-3 rounded-xl border-2 text-left transition-all ${
+                          form.deliveryType === "domicile"
+                            ? "border-brand-500 bg-brand-50 dark:bg-brand-900/20"
+                            : "border-[var(--border)] hover:border-brand-300"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <FiHome size={16} className={form.deliveryType === "domicile" ? "text-brand-500" : "text-[var(--text-secondary)]"} />
+                          <span className={`text-xs font-semibold ${form.deliveryType === "domicile" ? "text-brand-500" : "text-[var(--text-primary)]"}`}>
+                            À domicile
+                          </span>
+                        </div>
+                        <p className="text-sm font-bold text-[var(--text-primary)]">
+                          {formatPrice(selectedWilaya.domicile)}
+                        </p>
+                      </button>
+
+                      <button
+                        onClick={() => setForm((f) => ({ ...f, deliveryType: "bureau" }))}
+                        className={`p-3 rounded-xl border-2 text-left transition-all ${
+                          form.deliveryType === "bureau"
+                            ? "border-brand-500 bg-brand-50 dark:bg-brand-900/20"
+                            : "border-[var(--border)] hover:border-brand-300"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <FiPackage size={16} className={form.deliveryType === "bureau" ? "text-brand-500" : "text-[var(--text-secondary)]"} />
+                          <span className={`text-xs font-semibold ${form.deliveryType === "bureau" ? "text-brand-500" : "text-[var(--text-primary)]"}`}>
+                            Stop Desk
+                          </span>
+                        </div>
+                        <p className="text-sm font-bold text-[var(--text-primary)]">
+                          {formatPrice(selectedWilaya.bureau)}
+                        </p>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Adresse ou Agence */}
+                  {form.wilaya && form.deliveryType === "domicile" && (
+                    <div>
+                      <label className="text-xs text-[var(--text-secondary)] mb-1 block">
+                        Adresse complète *
+                      </label>
+                      <input
+                        name="address"
+                        value={form.address}
+                        onChange={handleChange}
+                        placeholder="Rue, quartier, commune..."
+                        className="input-field text-sm"
+                      />
+                    </div>
+                  )}
+
+                  
 
                   <div>
                     <label className="text-xs text-[var(--text-secondary)] mb-1 block">
@@ -358,31 +375,31 @@ export function OrderModal({ isOpen, onClose, product, quantity = 1 }: Props) {
                       name="notes"
                       value={form.notes}
                       onChange={handleChange}
-                      placeholder="Instructions spéciales, repères..."
+                      placeholder="Instructions spéciales..."
                       rows={2}
                       className="input-field text-sm resize-none"
                     />
                   </div>
                 </div>
 
-                {/* Order Total */}
+                {/* Total */}
                 <div className="bg-brand-50 dark:bg-brand-900/20 rounded-2xl p-4 border border-brand-200 dark:border-brand-800 space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-[var(--text-secondary)]">Sous-total</span>
-                    <span className="font-medium text-[var(--text-primary)]">{formatPrice(productTotal)}</span>
+                    <span className="font-medium">{formatPrice(productTotal)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-[var(--text-secondary)]">Frais de livraison</span>
-                    <span className={`font-medium ${deliveryFee === 0 && form.commune ? "text-green-600" : "text-[var(--text-primary)]"}`}>
-                      {form.commune
-                        ? deliveryFee === 0 ? "Gratuit 🎉" : formatPrice(deliveryFee)
-                        : "—"}
+                    <span className="text-[var(--text-secondary)]">
+                      Livraison {form.deliveryType === "domicile" ? "🏠 domicile" : "🏢 stop desk"}
+                    </span>
+                    <span className="font-medium">
+                      {form.wilaya ? formatPrice(deliveryFee) : "—"}
                     </span>
                   </div>
                   <div className="border-t border-brand-200 dark:border-brand-800 pt-2 flex justify-between">
                     <span className="font-bold text-[var(--text-primary)]">Total à payer</span>
                     <span className="font-display font-bold text-xl text-brand-500">
-                      {form.commune ? formatPrice(total) : formatPrice(productTotal) + " + livraison"}
+                      {form.wilaya ? formatPrice(total) : formatPrice(productTotal) + " + livraison"}
                     </span>
                   </div>
                   <p className="text-xs text-[var(--text-secondary)] text-center pt-1">
@@ -390,26 +407,21 @@ export function OrderModal({ isOpen, onClose, product, quantity = 1 }: Props) {
                   </p>
                 </div>
 
-                {/* Submit */}
+                {/* Bouton */}
                 <button
                   onClick={handleSubmit}
                   disabled={!isFormValid || submitting}
                   className="btn-primary w-full py-4 text-base flex items-center justify-center gap-2"
                 >
                   {submitting ? (
-                    <>
-                      <FiLoader size={18} className="animate-spin" />
-                      Envoi en cours...
-                    </>
+                    <><FiLoader size={18} className="animate-spin" /> Envoi...</>
                   ) : (
-                    <>
-                      🛍️ Confirmer la commande — {form.commune ? formatPrice(total) : ""}
-                    </>
+                    <>🛍️ Confirmer — {form.wilaya ? formatPrice(total) : ""}</>
                   )}
                 </button>
 
                 <p className="text-xs text-center text-[var(--text-secondary)]">
-                  En confirmant, vous acceptez nos conditions. Un agent vous contactera pour confirmer la livraison.
+                  Un agent vous contactera pour confirmer la livraison.
                 </p>
               </div>
             </>

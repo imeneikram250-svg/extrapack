@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!customer.firstName || !customer.lastName || !customer.phone || !customer.wilaya || !customer.commune) {
+    if (!customer.firstName || !customer.lastName || !customer.phone || !customer.wilaya) {
       return NextResponse.json(
         { success: false, error: "Informations client incomplètes" },
         { status: 400 }

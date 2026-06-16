@@ -1,18 +1,22 @@
 "use client";
 // ==========================================
-// EXTRA PACK - Product Detail (Client)
+// EXTRA PACK - Page Produit avec Variantes
 // ==========================================
 import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { FiShoppingBag, FiMinus, FiPlus, FiChevronRight, FiStar, FiCheck, FiTruck } from "react-icons/fi";
-import { Product } from "@/types";
+import {
+  FiShoppingBag, FiMinus, FiPlus, FiChevronRight,
+  FiStar, FiCheck, FiTruck
+} from "react-icons/fi";
+import { Product, ProductVariant } from "@/types";
 import { formatPrice, getDiscountedPrice } from "@/lib/utils";
 import { useCartStore } from "@/lib/store";
 import { ProductCard } from "@/components/product/ProductCard";
-import toast from "react-hot-toast";
+import { VariantSelector } from "@/components/product/VariantSelector";
 import { OrderModal } from "@/components/product/OrderModal";
+import toast from "react-hot-toast";
 
 interface Props {
   product: Product;
@@ -24,17 +28,49 @@ export function ProductDetailClient({ product, related }: Props) {
   const [quantity, setQuantity] = useState(1);
   const [orderOpen, setOrderOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"desc" | "delivery" | "reviews">("desc");
+  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(
+    product.variants?.[0] || null
+  );
   const { addItem } = useCartStore();
 
   const price = getDiscountedPrice(product.price, product.promotion);
-  const inStock = product.stock > 0;
+  const hasVariants = product.variants && product.variants.length > 0;
+
+  // Images affichées = images de la variante sélectionnée OU images du produit
+  const displayImages =
+    selectedVariant?.images?.length
+      ? selectedVariant.images
+      : product.images?.length
+      ? product.images
+      : [];
+
+  // Stock disponible
+  const availableStock = selectedVariant ? selectedVariant.stock : product.stock;
+  const inStock = availableStock > 0;
+
+  // Changer variante → reset image index
+  const handleVariantSelect = (variant: ProductVariant) => {
+    setSelectedVariant(variant);
+    setSelectedImg(0);
+  };
 
   const handleAddToCart = () => {
+    if (hasVariants && !selectedVariant) {
+      toast.error("Veuillez choisir une couleur");
+      return;
+    }
+    if (!inStock) return;
     addItem(product, quantity);
     toast.success("Ajouté au panier !");
   };
 
-  const images = product.images?.length > 0 ? product.images : ["/placeholder.jpg"];
+  const handleOrder = () => {
+    if (hasVariants && !selectedVariant) {
+      toast.error("Veuillez choisir une couleur");
+      return;
+    }
+    setOrderOpen(true);
+  };
 
   return (
     <>
@@ -57,23 +93,30 @@ export function ProductDetailClient({ product, related }: Props) {
         <div className="grid md:grid-cols-2 gap-10 lg:gap-16">
           {/* Images */}
           <div className="space-y-4">
-            {/* Main image */}
-            <div className="relative aspect-square rounded-2xl overflow-hidden bg-[var(--bg-secondary)] group">
+            {/* Image principale */}
+            <div className="relative aspect-square rounded-2xl overflow-hidden bg-[var(--bg-secondary)]">
               <AnimatePresence mode="wait">
                 <motion.div
-                  key={selectedImg}
+                  key={`${selectedVariant?.name}-${selectedImg}`}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
                   className="absolute inset-0"
                 >
-                  <Image
-                    src={images[selectedImg]}
-                    alt={product.name}
-                    fill
-                    className="object-cover group-hover:scale-105 transition-transform duration-500"
-                    priority
-                  />
+                  {displayImages[selectedImg] ? (
+                    <Image
+                      src={displayImages[selectedImg]}
+                      alt={`${product.name} ${selectedVariant?.name || ""}`}
+                      fill
+                      className="object-cover hover:scale-105 transition-transform duration-500"
+                      priority
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-6xl">
+                      🛍️
+                    </div>
+                  )}
                 </motion.div>
               </AnimatePresence>
 
@@ -86,20 +129,33 @@ export function ProductDetailClient({ product, related }: Props) {
                 )}
                 {!inStock && (
                   <span className="bg-gray-800/90 text-white text-sm font-bold px-3 py-1.5 rounded-full">
-                    Rupture de stock
+                    Rupture
                   </span>
                 )}
               </div>
+
+              {/* Couleur active badge */}
+              {selectedVariant && (
+                <div className="absolute bottom-3 left-3 flex items-center gap-2 bg-white/90 dark:bg-dark-800/90 rounded-full px-3 py-1.5 backdrop-blur-sm">
+                  <div
+                    className="w-4 h-4 rounded-full border border-gray-200"
+                    style={{ backgroundColor: selectedVariant.color }}
+                  />
+                  <span className="text-xs font-medium text-[var(--text-primary)]">
+                    {selectedVariant.name}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Thumbnails */}
-            {images.length > 1 && (
-              <div className="flex gap-3 overflow-x-auto pb-1">
-                {images.map((img, i) => (
+            {displayImages.length > 1 && (
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {displayImages.map((img, i) => (
                   <button
                     key={i}
                     onClick={() => setSelectedImg(i)}
-                    className={`relative w-18 h-18 flex-shrink-0 rounded-xl overflow-hidden border-2 transition-all ${
+                    className={`relative w-16 h-16 flex-shrink-0 rounded-xl overflow-hidden border-2 transition-all ${
                       selectedImg === i ? "border-brand-500" : "border-transparent"
                     }`}
                   >
@@ -110,8 +166,8 @@ export function ProductDetailClient({ product, related }: Props) {
             )}
           </div>
 
-          {/* Info */}
-          <div className="space-y-6">
+          {/* Infos produit */}
+          <div className="space-y-5">
             <div>
               <p className="text-brand-500 text-sm font-semibold uppercase tracking-wider mb-2">
                 {product.category}
@@ -128,7 +184,7 @@ export function ProductDetailClient({ product, related }: Props) {
                 <span className="text-sm text-[var(--text-secondary)]">(4.9 · 47 avis)</span>
               </div>
 
-              {/* Price */}
+              {/* Prix */}
               <div className="flex items-baseline gap-3">
                 <span className="font-display font-bold text-3xl text-brand-500">
                   {formatPrice(price)}
@@ -139,24 +195,33 @@ export function ProductDetailClient({ product, related }: Props) {
                       {formatPrice(product.originalPrice)}
                     </span>
                     <span className="text-sm font-bold text-green-600 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded-full">
-                      Économisez {formatPrice(product.originalPrice - price)}
+                      -{product.promotion}%
                     </span>
                   </>
                 )}
               </div>
             </div>
 
-            {/* Stock indicator */}
+            {/* Sélecteur de variantes */}
+            {hasVariants && product.variants && (
+              <VariantSelector
+                variants={product.variants}
+                selected={selectedVariant}
+                onSelect={handleVariantSelect}
+              />
+            )}
+
+            {/* Stock */}
             <div className={`flex items-center gap-2 text-sm font-medium ${inStock ? "text-green-600" : "text-red-500"}`}>
               <div className={`w-2 h-2 rounded-full ${inStock ? "bg-green-500" : "bg-red-500"}`} />
               {inStock
-                ? product.stock <= 10
-                  ? `Plus que ${product.stock} en stock — Commandez vite !`
-                  : "En stock — Livraison immédiate"
+                ? availableStock <= 5
+                  ? `Plus que ${availableStock} disponible${availableStock > 1 ? "s" : ""} !`
+                  : "En stock — Livraison rapide"
                 : "Rupture de stock"}
             </div>
 
-            {/* Quantity */}
+            {/* Quantité */}
             {inStock && (
               <div className="flex items-center gap-4">
                 <span className="text-sm font-medium text-[var(--text-secondary)]">Quantité :</span>
@@ -171,7 +236,7 @@ export function ProductDetailClient({ product, related }: Props) {
                     {quantity}
                   </span>
                   <button
-                    onClick={() => setQuantity(Math.min(product.stock, quantity + 1))}
+                    onClick={() => setQuantity(Math.min(availableStock, quantity + 1))}
                     className="px-3 py-2.5 hover:bg-[var(--bg-secondary)] transition-colors"
                   >
                     <FiPlus size={16} />
@@ -180,15 +245,15 @@ export function ProductDetailClient({ product, related }: Props) {
               </div>
             )}
 
-            {/* CTA Buttons */}
+            {/* CTA */}
             <div className="flex flex-col sm:flex-row gap-3">
               <button
-                onClick={() => setOrderOpen(true)}
-                disabled={!inStock}
-                className="btn-primary flex-1 flex items-center justify-center gap-2 py-4 text-base"
+                onClick={handleOrder}
+                disabled={!inStock || (hasVariants && !selectedVariant)}
+                className="btn-primary flex-1 flex items-center justify-center gap-2 py-4 text-base disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <FiShoppingBag size={20} />
-                {inStock ? "Commander maintenant" : "Rupture de stock"}
+                {!inStock ? "Rupture de stock" : hasVariants && !selectedVariant ? "Choisir une couleur" : "Commander maintenant"}
               </button>
               {inStock && (
                 <button
@@ -200,21 +265,16 @@ export function ProductDetailClient({ product, related }: Props) {
               )}
             </div>
 
-            {/* Trust signals */}
+            {/* Trust */}
             <div className="grid grid-cols-2 gap-3">
               {[
-                { icon: <FiTruck size={16} />, text: "Livraison 24–72h" },
+                { icon: <FiTruck size={16} />, text: "Livraison domicile ou bureau" },
                 { icon: <FiCheck size={16} />, text: "Paiement à la livraison" },
                 { icon: "🔒", text: "Commande sécurisée" },
                 { icon: "↩️", text: "Retour facile" },
-              ].map((item) => (
-                <div
-                  key={typeof item.text === 'string' ? item.text : ''}
-                  className="flex items-center gap-2 text-xs text-[var(--text-secondary)] bg-[var(--bg-secondary)] rounded-xl p-2.5"
-                >
-                  <span className="text-brand-500 flex-shrink-0">
-                    {typeof item.icon === 'string' ? item.icon : item.icon}
-                  </span>
+              ].map((item, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs text-[var(--text-secondary)] bg-[var(--bg-secondary)] rounded-xl p-2.5">
+                  <span className="text-brand-500 flex-shrink-0">{item.icon}</span>
                   {item.text}
                 </div>
               ))}
@@ -226,15 +286,10 @@ export function ProductDetailClient({ product, related }: Props) {
         <div className="mt-12 border-b border-[var(--border)]">
           <div className="flex gap-6">
             {(["desc", "delivery", "reviews"] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
+              <button key={tab} onClick={() => setActiveTab(tab)}
                 className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === tab
-                    ? "border-brand-500 text-brand-500"
-                    : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                }`}
-              >
+                  activeTab === tab ? "border-brand-500 text-brand-500" : "border-transparent text-[var(--text-secondary)]"
+                }`}>
                 {tab === "desc" ? "Description" : tab === "delivery" ? "Livraison" : "Avis"}
               </button>
             ))}
@@ -243,31 +298,31 @@ export function ProductDetailClient({ product, related }: Props) {
 
         <div className="mt-6 mb-12">
           {activeTab === "desc" && (
-            <div className="prose prose-sm dark:prose-invert max-w-none text-[var(--text-secondary)] leading-relaxed">
+            <p className="text-[var(--text-secondary)] leading-relaxed">
               {product.description || "Aucune description disponible."}
-            </div>
+            </p>
           )}
           {activeTab === "delivery" && (
             <div className="space-y-4 text-sm text-[var(--text-secondary)]">
               <div className="card p-4 flex items-start gap-3">
-                <FiTruck size={20} className="text-brand-500 flex-shrink-0 mt-0.5" />
+                <span className="text-xl">🏠</span>
                 <div>
-                  <p className="font-semibold text-[var(--text-primary)]">Livraison express</p>
-                  <p>24 à 72 heures ouvrables selon votre wilaya</p>
+                  <p className="font-semibold text-[var(--text-primary)]">Livraison à domicile</p>
+                  <p>Livré directement chez vous en 24–72h</p>
                 </div>
               </div>
               <div className="card p-4 flex items-start gap-3">
-                <span className="text-xl flex-shrink-0">💵</span>
+                <span className="text-xl">🏢</span>
+                <div>
+                  <p className="font-semibold text-[var(--text-primary)]">Stop Desk / Bureau</p>
+                  <p>Récupérez votre colis à l'agence ZR Express la plus proche — moins cher !</p>
+                </div>
+              </div>
+              <div className="card p-4 flex items-start gap-3">
+                <span className="text-xl">💵</span>
                 <div>
                   <p className="font-semibold text-[var(--text-primary)]">Paiement à la livraison</p>
-                  <p>Payez en espèces uniquement à la réception de votre commande</p>
-                </div>
-              </div>
-              <div className="card p-4 flex items-start gap-3">
-                <span className="text-xl flex-shrink-0">📦</span>
-                <div>
-                  <p className="font-semibold text-[var(--text-primary)]">Emballage soigné</p>
-                  <p>Vos produits sont emballés avec soin pour éviter tout dommage</p>
+                  <p>Payez en espèces uniquement à la réception</p>
                 </div>
               </div>
             </div>
@@ -279,7 +334,7 @@ export function ProductDetailClient({ product, related }: Props) {
           )}
         </div>
 
-        {/* Related products */}
+        {/* Produits similaires */}
         {related.length > 0 && (
           <section>
             <h2 className="font-display text-2xl font-bold mb-6 text-[var(--text-primary)]">
@@ -294,12 +349,11 @@ export function ProductDetailClient({ product, related }: Props) {
         )}
       </div>
 
-      {/* Order Modal */}
+      {/* Modal commande */}
       <OrderModal
         isOpen={orderOpen}
         onClose={() => setOrderOpen(false)}
-        product={product}
-        quantity={quantity}
+        items={[{ product, quantity, selectedVariant: selectedVariant || undefined }]}
       />
     </>
   );

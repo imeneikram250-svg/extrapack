@@ -1,7 +1,4 @@
 "use client";
-// ==========================================
-// EXTRA PACK - Page Checkout
-// ==========================================
 import { useCartStore } from "@/lib/store";
 import { OrderModal } from "@/components/product/OrderModal";
 import { useState, useEffect } from "react";
@@ -12,9 +9,14 @@ export default function CheckoutPage() {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    // Auto-open modal if cart has items
     if (items.length > 0) setOpen(true);
   }, [items.length]);
+
+  const orderItems = items.map((item) => ({
+    product: item.product,
+    quantity: item.quantity,
+    selectedVariant: item.selectedVariant,
+  }));
 
   if (items.length === 0) {
     return (
@@ -39,7 +41,11 @@ export default function CheckoutPage() {
           <p className="text-[var(--text-secondary)]">Préparation de votre commande...</p>
         </div>
       </div>
-      <OrderModal isOpen={open} onClose={() => setOpen(false)} />
+      <OrderModal
+        isOpen={open}
+        onClose={() => setOpen(false)}
+        items={orderItems}
+      />
     </>
   );
 }

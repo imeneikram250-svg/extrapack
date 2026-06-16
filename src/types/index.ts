@@ -1,6 +1,13 @@
 // ==========================================
-// EXTRA PACK - Types TypeScript
+// EXTRA PACK - Types mis à jour (Variantes + Livraison)
 // ==========================================
+
+export interface ProductVariant {
+  name: string;        // "Noir Corbeau"
+  color: string;       // "#0a0a0a"
+  stock: number;       // 10
+  images: string[];    // photos spécifiques à cette variante
+}
 
 export interface Product {
   id: string;
@@ -9,11 +16,12 @@ export interface Product {
   description: string;
   price: number;
   originalPrice?: number;
-  stock: number;
-  images: string[];
+  stock: number;           // stock total (ou stock si pas de variantes)
+  images: string[];        // photos principales
   status: "Actif" | "Inactif";
-  promotion?: number; // % de réduction
+  promotion?: number;
   sold?: number;
+  variants?: ProductVariant[]; // undefined = pas de variantes
   createdAt?: string;
 }
 
@@ -23,22 +31,14 @@ export interface Category {
   count: number;
 }
 
-export interface Wilaya {
-  id: string;
-  name: string;
-  communes: Commune[];
-}
-
-export interface Commune {
-  name: string;
-  deliveryFee: number;
-}
-
-export interface DeliveryZone {
+// Livraison par wilaya (domicile + bureau)
+export interface WilayaDelivery {
   wilaya: string;
-  commune: string;
-  fee: number;
+  domicile: number;   // frais livraison à domicile
+  bureau: number;     // frais stop desk / bureau
 }
+
+export type DeliveryType = "domicile" | "bureau";
 
 export interface OrderItem {
   productId: string;
@@ -47,6 +47,7 @@ export interface OrderItem {
   unitPrice: number;
   totalPrice: number;
   image?: string;
+  variant?: string;   // "Noir Corbeau" par exemple
 }
 
 export interface Order {
@@ -58,7 +59,9 @@ export interface Order {
     lastName: string;
     phone: string;
     wilaya: string;
-    commune: string;
+    address?: string;      // adresse si domicile
+    agenceZR?: string;     // agence si bureau
+    deliveryType: DeliveryType;
   };
   items: OrderItem[];
   productPrice: number;
@@ -80,6 +83,7 @@ export type OrderStatus =
 export interface CartItem {
   product: Product;
   quantity: number;
+  selectedVariant?: ProductVariant;
 }
 
 export interface OrderFormData {
@@ -87,7 +91,9 @@ export interface OrderFormData {
   lastName: string;
   phone: string;
   wilaya: string;
-  commune: string;
+  deliveryType: DeliveryType;
+  address?: string;
+  agenceZR?: string;
   notes?: string;
 }
 
@@ -100,14 +106,4 @@ export interface AdminStats {
   confirmedOrders: number;
   shippedOrders: number;
   deliveredOrders: number;
-}
-
-export interface Review {
-  id: string;
-  name: string;
-  rating: number;
-  comment: string;
-  date: string;
-  verified: boolean;
-  avatar?: string;
 }
