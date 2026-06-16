@@ -67,7 +67,7 @@ export default function ConfirmationPage() {
 
           <div className="border-t border-[var(--border)] pt-3 space-y-2">
             <div className="flex justify-between text-sm">
-              <span className="text-[var(--text-secondary)]">Livraison vers {lastOrder.customer.commune}</span>
+              <span className="text-[var(--text-secondary)]">Livraison vers {lastOrder.customer.wilaya}</span>
               <span className="text-[var(--text-primary)]">{formatPrice(lastOrder.deliveryFee)}</span>
             </div>
             <div className="flex justify-between font-bold">
@@ -82,7 +82,7 @@ export default function ConfirmationPage() {
               {lastOrder.customer.firstName} {lastOrder.customer.lastName}
             </p>
             <p className="text-sm text-[var(--text-secondary)]">
-              {lastOrder.customer.commune}, {lastOrder.customer.wilaya}
+              {lastOrder.customer.address || lastOrder.customer.wilaya}
             </p>
             <p className="text-sm text-[var(--text-secondary)]">{lastOrder.customer.phone}</p>
           </div>
