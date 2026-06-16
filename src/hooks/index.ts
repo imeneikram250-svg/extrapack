@@ -2,7 +2,7 @@
 // EXTRA PACK - Custom Hooks
 // ==========================================
 import { useState, useEffect, useCallback } from "react";
-import { Product, Wilaya } from "@/types";
+import { Product, WilayaDelivery as Wilaya } from "@/types";
 
 // ── useProducts ───────────────────────────────────────────
 export function useProducts() {
