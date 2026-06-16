@@ -3,7 +3,7 @@
 // ==========================================
 import { NextRequest, NextResponse } from "next/server";
 import { updateOrderStatus, getOrderById } from "@/lib/firestore";
-import { updateOrderStatusInSheet } from "@/lib/sheets";
+//import { updateOrderStatusInSheet } from "@/lib/sheets";
 import { OrderStatus } from "@/types";
 
 export async function PATCH(
@@ -31,7 +31,7 @@ export async function PATCH(
     // Update in Google Sheets too
     const order = await getOrderById(params.id);
     if (order) {
-      updateOrderStatusInSheet(order.orderNumber, status).catch(console.error);
+      // updateOrderStatusInSheet(order.orderNumber, status).catch(console.error);
     }
 
     return NextResponse.json({ success: true });

@@ -316,7 +316,7 @@ export default function AdminPage() {
                           {order.customer.firstName} {order.customer.lastName} · {order.customer.phone}
                         </p>
                         <p className="text-xs text-[var(--text-secondary)]">
-                          {order.customer.commune}, {order.customer.wilaya} · {formatDate(order.date)}
+                          {order.customer.wilaya} · {formatDate(order.date)}
                         </p>
                         <p className="text-xs text-[var(--text-secondary)]">
                           {order.items.map(i => `${i.productName} ×${i.quantity}`).join(", ")}
